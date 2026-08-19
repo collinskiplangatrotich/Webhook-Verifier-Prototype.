@@ -1,1 +1,1 @@
-# Webhook-Verifier-Prototype.
+# Webhook-Verifier-Protootype

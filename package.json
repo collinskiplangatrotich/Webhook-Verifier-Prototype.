@@ -1,0 +1,13 @@
+{
+    "name": "webhook-verifier-prototype",
+      "version": "1.0.0",
+        "description": "Webhook Verifier Prototype",
+          "main": ".vscode/server.js",
+            "scripts": {
+                "start": "node .vscode/server.js"
+                  },
+                    "dependencies": {
+                        "express": "^4.19.2"
+                          }
+                          }
+}
