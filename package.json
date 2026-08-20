@@ -1,13 +1,1 @@
-{
-    "name": "webhook-verifier-prototype",
-      "version": "1.0.0",
-        "description": "Webhook Verifier Prototype",
-          "main": ".vscode/server.js",
-            "scripts": {
-                "start": "node .vscode/server.js"
-                  },
-                    "dependencies": {
-                        "express": "^4.19.2"
-                          }
-                          }
-}
+{"name":"webhook-verifier-prototype","version":"1.0.0","main":"server.js","scripts":{"start":"node server.js"},"dependencies":{"express":"^5.2.1"},"description":"","repository":{"type":"git","url":"git+https://github.com/collinskiplangatrotich/Webhook-Verifier-Prototype..git"},"keywords":[],"author":"","license":"ISC","type":"commonjs","bugs":{"url":"https://github.com/collinskiplangatrotich/Webhook-Verifier-Prototype./issues"},"homepage":"https://github.com/collinskiplangatrotich/Webhook-Verifier-Prototype.#readme"}
