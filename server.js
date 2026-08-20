@@ -1,0 +1,140 @@
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const attendees = new Map();
+
+function publishToVendorQueue(attendeeId, printJobId) {
+    console.log(`[Queue] Published print job ${printJobId} for attendee ${attendeeId}`);
+}
+
+app.post('/api/scan', (req, res) => {
+    const { attendeeId } = req.body;
+    if (!attendeeId) return res.status(400).json({ error: "attendeeId is required" });
+
+    const currentRecord = attendees.get(attendeeId);
+    if (currentRecord && (currentRecord.status === 'PENDING' || currentRecord.status === 'CHECKED_IN')) {
+        return res.status(409).json({
+            error: "Duplicate scan rejected. Badge print job is already pending or completed.",
+            status: currentRecord.status
+        });
+    }
+
+    const printJobId = `job_${Date.now()}_${attendeeId}`;
+    attendees.set(attendeeId, { status: 'PENDING', printJobId: printJobId, updatedAt: new Date() });
+    publishToVendorQueue(attendeeId, printJobId);
+
+    return res.status(202).json({
+        message: "Scan accepted. Print job queued.",
+        attendeeId: attendeeId,
+        status: 'PENDING',
+        printJobId: printJobId
+    });
+});
+
+app.post('/api/webhook/print-completed', (req, res) => {
+    const { attendeeId, printJobId, result } = req.body;
+    if (!attendeeId || !printJobId) return res.status(400).json({ error: "Invalid webhook payload" });
+
+    const currentRecord = attendees.get(attendeeId);
+    if (!currentRecord) return res.status(404).json({ error: "Attendee record not found" });
+
+    if (currentRecord.status === 'CHECKED_IN') {
+        return res.status(200).json({ message: "Duplicate webhook acknowledged. Already checked in." });
+    }
+
+    if (result === 'SUCCESS' && currentRecord.status === 'PENDING') {
+        attendees.set(attendeeId, { ...currentRecord, status: 'CHECKED_IN', completedAt: new Date() });
+        console.log(`[Webhook] Success received for ${attendeeId}. Status: CHECKED_IN`);
+        return res.status(200).json({ message: "Check-in confirmed successfully" });
+    }
+
+    return res.status(400).json({ error: "Print job failed or state invalid" });
+});
+
+app.get('/api/status/:attendeeId', (req, res) => {
+    const { attendeeId } = req.params;
+    const record = attendees.get(attendeeId);
+    if (!record) return res.json({ attendeeId, status: 'NOT_CHECKED_IN' });
+    return res.json({ attendeeId, status: record.status });
+});
+
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Solstice Events Kiosk</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: auto; }
+                input, button { font-size: 16px; padding: 10px; margin-top: 10px; width: 100%; box-sizing: border-box; }
+                #status-display { margin-top: 20px; padding: 15px; border-radius: 5px; font-weight: bold; text-align: center; }
+                .PENDING { background: #fff3cd; color: #856404; }
+                .CHECKED_IN { background: #d4edda; color: #155724; }
+                .ERROR { background: #f8d7da; color: #721c24; }
+            </style>
+        </head>
+        <body>
+            <h2>Event Check-In Kiosk</h2>
+            <input type="text" id="attendeeId" placeholder="Enter Attendee ID (e.g. att_101)" />
+            <button onclick="handleScan()">Scan QR / Check In</button>
+            <div id="status-display">Ready for scan</div>
+            <script>
+                let pollInterval = null;
+                async function handleScan() {
+                    const attendeeId = document.getElementById('attendeeId').value.trim();
+                    const statusDisplay = document.getElementById('status-display');
+                    if (!attendeeId) return alert('Please enter an Attendee ID');
+                    if (pollInterval) clearInterval(pollInterval);
+                    statusDisplay.className = 'PENDING';
+                    statusDisplay.innerText = 'Processing...';
+
+                    try {
+                        const response = await fetch('/api/scan', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ attendeeId })
+                        });
+                        const data = await response.json();
+                        if (response.status === 409) {
+                            statusDisplay.className = 'ERROR';
+                            statusDisplay.innerText = 'Rejected: Duplicate scan! Already pending or checked in.';
+                            return;
+                        }
+                        if (data.status === 'PENDING') {
+                            statusDisplay.className = 'PENDING';
+                            statusDisplay.innerText = 'Pending - Print Job Sent...';
+                            pollAttendeeStatus(attendeeId);
+                        }
+                    } catch (err) {
+                        statusDisplay.className = 'ERROR';
+                        statusDisplay.innerText = 'Network error occurred.';
+                    }
+                }
+
+                function pollAttendeeStatus(attendeeId) {
+                    pollInterval = setInterval(async () => {
+                        try {
+                            const res = await fetch('/api/status/' + attendeeId);
+                            const data = await res.json();
+                            if (data.status === 'CHECKED_IN') {
+                                const statusDisplay = document.getElementById('status-display');
+                                statusDisplay.className = 'CHECKED_IN';
+                                statusDisplay.innerText = 'Checked In!';
+                                clearInterval(pollInterval);
+                            }
+                        } catch (err) {
+                            console.error('Polling error:', err);
+                        }
+                    }, 2000);
+                }
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
